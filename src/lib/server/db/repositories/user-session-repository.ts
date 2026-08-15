@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, lte } from 'drizzle-orm';
 import type { AppDatabase } from '../client';
 import { sessions, users } from '../schema';
 
@@ -29,6 +29,7 @@ export interface UserSessionStore {
   ): SessionUserRecord;
   findUserBySessionHash(tokenHash: string, now: Date): SessionUserRecord | null;
   deleteSession(tokenHash: string): void;
+  deleteExpiredSessions(now: Date): number;
 }
 
 export class UserSessionRepository implements UserSessionStore {
@@ -133,5 +134,9 @@ export class UserSessionRepository implements UserSessionStore {
 
   deleteSession(tokenHash: string): void {
     this.db.delete(sessions).where(eq(sessions.tokenHash, tokenHash)).run();
+  }
+
+  deleteExpiredSessions(now: Date): number {
+    return this.db.delete(sessions).where(lte(sessions.expiresAt, now)).run().changes;
   }
 }
