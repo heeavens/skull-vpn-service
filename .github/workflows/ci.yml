@@ -12,12 +12,12 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v2
         with:
-          node-version: 24
-          cache: pnpm
+          runtime: node@24
+          cache: true
+          install: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm lint
@@ -30,28 +30,33 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - run: docker compose --env-file .env.example config --quiet
-      - run: docker build --tag vpn-service:ci .
+      - run: docker build --tag vpn-service:${{ github.sha }} .
       - name: Smoke-test native SQLite in the runtime image
         run: >-
-          docker run --rm vpn-service:ci node -e
+          docker run --rm vpn-service:${{ github.sha }} node -e
           "const Database=require('better-sqlite3');
           const db=new Database(':memory:');
           db.prepare('select 1').get();
           db.close()"
       - name: Smoke-test migrations in the runtime image
-        run: docker run --rm --env DATABASE_URL=/tmp/app.db vpn-service:ci node scripts/migrate.mjs
+        run: >-
+          docker run --rm --env DATABASE_URL=/tmp/app.db
+          vpn-service:${{ github.sha }} node scripts/migrate.mjs
 
   dependency-review:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v5
 
   secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false
