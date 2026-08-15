@@ -36,8 +36,9 @@ Propose the following contract for team lead approval:
   successful session creations per verified Telegram user in five minutes. Counters may be
   process-local for the approved single-instance deployment.
 - Client address resolution trusts exactly one `X-Forwarded-For` hop from the internal Caddy
-  service. The app container remains unreachable from the public network. The required
-  adapter-node proxy settings must be added to the configuration contract and `.env.example`.
+  service. The app container remains unreachable from the public network. Set adapter-node's
+  `ADDRESS_HEADER=X-Forwarded-For` and `XFF_DEPTH=1`; add both values to the protected
+  configuration contract and `.env.example`.
 - `POST /api/auth/logout` requires same-origin `Origin`, is idempotent, always clears the cookie,
   deletes the matching server session when present, and returns `204 No Content`. It does not
   reveal whether a supplied token existed.
@@ -104,7 +105,7 @@ durable business-job taxonomy.
 - Auth route tests can assert exact status codes, stable error codes, cookies, database effects,
   body limits, rate limits, origin checks, and secret redaction.
 - The Mini App can complete a mocked Telegram bridge to cookie to Home end-to-end test.
-- Two adapter-node proxy settings become protected environment configuration.
+- `ADDRESS_HEADER` and `XFF_DEPTH` become protected environment configuration.
 - Process-local counters are acceptable only while the app remains single-instance.
 - Changing limits or response codes later requires a contract version and changelog update.
 

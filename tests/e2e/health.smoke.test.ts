@@ -106,10 +106,13 @@ test('auth guard rejects an expired session and clears its cookie', async ({ req
 
   expect(response.status()).toBe(303);
   expect(response.headers().location).toBe('/open-in-telegram');
-  expect(response.headers()['set-cookie']).toContain('vpn_session=');
-  expect(response.headers()['set-cookie']).toContain('HttpOnly');
-  expect(response.headers()['set-cookie']).toContain('Secure');
-  expect(response.headers()['set-cookie']).toContain('SameSite=Lax');
+  const setCookie = response.headers()['set-cookie'];
+  expect(setCookie).toMatch(/^vpn_session=;/);
+  expect(setCookie).toContain('Max-Age=0');
+  expect(setCookie).toContain('Path=/');
+  expect(setCookie).toContain('HttpOnly');
+  expect(setCookie).toContain('Secure');
+  expect(setCookie).toContain('SameSite=Lax');
 });
 
 test('returning session initializes Telegram lifecycle and follows its theme', async ({
@@ -125,6 +128,7 @@ test('returning session initializes Telegram lifecycle and follows its theme', a
 
   await expect(page.getByTestId('app-shell')).toBeVisible();
   await expect(page.getByTestId('app-shell')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.getByTestId('app-shell')).toHaveAttribute('data-theme-source', 'telegram');
   await expect.poll(() => getTelegramLifecycleCalls(page)).toEqual({ ready: 1, expand: 1 });
   await expectAppShellColors(page, {
     background: 'rgb(17, 18, 24)',
@@ -133,6 +137,17 @@ test('returning session initializes Telegram lifecycle and follows its theme', a
 
   await page.evaluate(() => window.__telegramTest.setTheme('light'));
   await expect(page.getByTestId('app-shell')).toHaveAttribute('data-theme', 'light');
+  await expectAppShellColors(page, {
+    background: 'rgb(255, 255, 255)',
+    text: 'rgb(10, 10, 16)'
+  });
+
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty('--tg-theme-bg-color', '#05060a');
+    document.documentElement.style.setProperty('--tg-theme-text-color', '#fafafa');
+    const shell = document.querySelector<HTMLElement>('[data-testid="app-shell"]');
+    shell?.setAttribute('data-theme-source', 'explicit');
+  });
   await expectAppShellColors(page, {
     background: 'rgb(255, 255, 255)',
     text: 'rgb(10, 10, 16)'
@@ -196,6 +211,9 @@ test('navigation buttons and guarded swipes keep sections synchronized', async (
 
   await page.getByTestId('nav-support').click();
   await expect(supportScroll).toHaveJSProperty('scrollTop', supportScrollTop);
+  await page.getByTestId('nav-home').click();
+  await expect(page.getByTestId('section-home')).toHaveAttribute('aria-hidden', 'false');
+  await expect(page.getByTestId('nav-home')).toHaveAttribute('aria-current', 'page');
   await page.getByTestId('nav-profile').click();
   await page.getByRole('button', { name: 'Перейти на главную' }).click();
   await expect(page.getByTestId('section-home')).toHaveAttribute('aria-hidden', 'false');

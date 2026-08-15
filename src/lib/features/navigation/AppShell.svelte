@@ -48,6 +48,9 @@
     navigationItems.find((item) => item.id === activeSection)?.label ?? 'Главная'
   );
   const resolvedTheme = $derived(theme === 'system' ? telegramTheme : theme);
+  const resolvedThemeSource = $derived(
+    theme === 'system' ? (telegramTheme ? 'telegram' : undefined) : 'explicit'
+  );
 
   function navigate(section: SectionId): void {
     activeSection = section;
@@ -78,7 +81,12 @@
   <ProfileSection {user} onChoosePlan={() => navigateFromContent('home')} />
 {/snippet}
 
-<main class="app-shell" data-theme={resolvedTheme} data-testid="app-shell">
+<main
+  class="app-shell"
+  data-theme={resolvedTheme}
+  data-theme-source={resolvedThemeSource}
+  data-testid="app-shell"
+>
   <SwipePager {activeSection} onChange={navigate} {support} home={children} {profile} />
   <GlassNavIsland {activeSection} onChange={navigate} />
   <span class="sr-only" aria-live="polite">Открыта секция «{activeLabel}»</span>
