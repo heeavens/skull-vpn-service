@@ -1,0 +1,120 @@
+name: vpn-service
+
+services:
+  migrate:
+    build:
+      context: .
+      target: runtime
+    command: ['node', 'scripts/migrate.mjs']
+    environment:
+      DATABASE_URL: /data/app.db
+    volumes:
+      - app_data:/data
+    restart: 'no'
+
+  app:
+    build:
+      context: .
+      target: runtime
+    environment:
+      APP_BASE_URL: ${APP_BASE_URL:?APP_BASE_URL is required}
+      PUBLIC_TELEGRAM_BOT_USERNAME: ${PUBLIC_TELEGRAM_BOT_USERNAME:?PUBLIC_TELEGRAM_BOT_USERNAME is required}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?TELEGRAM_WEBHOOK_SECRET is required}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY is required}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET is required}
+      STRIPE_API_VERSION: ${STRIPE_API_VERSION:?STRIPE_API_VERSION is required}
+      PAYMENT_CURRENCY: ${PAYMENT_CURRENCY:-eur}
+      STRIPE_LIVEMODE_ALLOWED: 'false'
+      ADMIN_TELEGRAM_CHAT_ID: ${ADMIN_TELEGRAM_CHAT_ID:?ADMIN_TELEGRAM_CHAT_ID is required}
+      SUPPORT_CHAT_ID: ${SUPPORT_CHAT_ID:-}
+      DATABASE_URL: /data/app.db
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required}
+      SUBSCRIPTION_PUBLIC_BASE_URL: ${SUBSCRIPTION_PUBLIC_BASE_URL:?SUBSCRIPTION_PUBLIC_BASE_URL is required}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      HOST_HEADER: x-forwarded-host
+      ORIGIN: ${APP_BASE_URL}
+      PORT: 3000
+      PROTOCOL_HEADER: x-forwarded-proto
+    volumes:
+      - app_data:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health/ready').then((r)=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: runtime
+    command: ['node', 'build/worker.js']
+    environment:
+      APP_BASE_URL: ${APP_BASE_URL:?APP_BASE_URL is required}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}
+      ADMIN_TELEGRAM_CHAT_ID: ${ADMIN_TELEGRAM_CHAT_ID:?ADMIN_TELEGRAM_CHAT_ID is required}
+      SUPPORT_CHAT_ID: ${SUPPORT_CHAT_ID:-}
+      DATABASE_URL: /data/app.db
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required}
+      MARZBAN_BASE_URL: ${MARZBAN_BASE_URL:?MARZBAN_BASE_URL is required}
+      MARZBAN_ADMIN_USERNAME: ${MARZBAN_ADMIN_USERNAME:?MARZBAN_ADMIN_USERNAME is required}
+      MARZBAN_ADMIN_PASSWORD: ${MARZBAN_ADMIN_PASSWORD:?MARZBAN_ADMIN_PASSWORD is required}
+      MARZBAN_VLESS_INBOUND_TAGS: ${MARZBAN_VLESS_INBOUND_TAGS:?MARZBAN_VLESS_INBOUND_TAGS is required}
+      SUBSCRIPTION_PUBLIC_BASE_URL: ${SUBSCRIPTION_PUBLIC_BASE_URL:?SUBSCRIPTION_PUBLIC_BASE_URL is required}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+    volumes:
+      - app_data:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'node', '-e', 'process.kill(1, 0)']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    init: true
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.11.4-alpine
+    environment:
+      APP_BASE_URL: ${APP_BASE_URL}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--spider', 'http://127.0.0.1:2019/config/']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  app_data:
+  caddy_data:
+  caddy_config:
