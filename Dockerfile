@@ -12,7 +12,10 @@ RUN pnpm install --frozen-lockfile
 
 FROM dependencies AS production-dependencies
 
-RUN pnpm prune --prod
+# Docker build steps are non-interactive, but they do not inherit GitHub's CI
+# environment. Ignore lifecycle scripts because `prepare` depends on the dev-only
+# SvelteKit binary that this step intentionally removes.
+RUN CI=true pnpm prune --prod --ignore-scripts
 
 FROM dependencies AS build
 
