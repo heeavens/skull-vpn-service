@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { AuthenticatedUser } from '$lib/types/auth';
 import type { UserSessionStore } from '$lib/server/db/repositories/user-session-repository';
 import { verifyTelegramInitData } from '$lib/server/telegram/init-data';
+import { AuthRateLimitError, type SessionCreationRateLimiter } from './rate-limit';
 
 export const SESSION_DURATION_SECONDS = 7 * 24 * 60 * 60;
 
@@ -16,6 +17,7 @@ type AuthServiceOptions = Readonly<{
   adminTelegramChatId: string;
   now?: () => Date;
   createToken?: () => string;
+  sessionCreationRateLimiter?: SessionCreationRateLimiter;
 }>;
 
 export class AuthService {
@@ -33,6 +35,14 @@ export class AuthService {
   authenticateWithTelegram(rawInitData: string): AuthenticatedSession {
     const now = this.now();
     const telegramUser = verifyTelegramInitData(rawInitData, this.options.telegramBotToken, now);
+    const rateLimitDecision = this.options.sessionCreationRateLimiter?.check(
+      telegramUser.telegramUserId,
+      now
+    );
+    if (rateLimitDecision && !rateLimitDecision.allowed) {
+      throw new AuthRateLimitError(rateLimitDecision.retryAfterSeconds);
+    }
+
     const token = this.createToken();
     if (!isOpaqueSessionToken(token)) {
       throw new Error('Session token generator returned an invalid token');
@@ -45,6 +55,7 @@ export class AuthService {
       now,
       expiresAt
     });
+    this.options.sessionCreationRateLimiter?.record(telegramUser.telegramUserId, now);
 
     return {
       token,

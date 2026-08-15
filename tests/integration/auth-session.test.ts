@@ -3,6 +3,7 @@ import type { Cookies } from '@sveltejs/kit';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearSessionCookie, SESSION_COOKIE_NAME, setSessionCookie } from '$lib/server/auth/cookie';
+import { AuthRateLimitError, SlidingWindowRateLimiter } from '$lib/server/auth/rate-limit';
 import { AuthService, hashSessionToken } from '$lib/server/auth/session';
 import { openDatabase, type DatabaseClient } from '$lib/server/db/client';
 import { UserSessionRepository } from '$lib/server/db/repositories/user-session-repository';
@@ -113,6 +114,8 @@ describe('Telegram authentication sessions', () => {
 
     now = new Date(authenticated.expiresAt.getTime());
     expect(service.resolveSession(authenticated.token)).toBeNull();
+    expect(new UserSessionRepository(database.db).deleteExpiredSessions(now)).toBe(1);
+    expect(database.db.select().from(sessions).all()).toEqual([]);
   });
 
   it('deletes the server-side session on logout', () => {
@@ -139,6 +142,34 @@ describe('Telegram authentication sessions', () => {
     service.endSession('not-an-opaque-token');
 
     expect(database.db.select().from(sessions).all()).toEqual([]);
+  });
+
+  it('enforces auth sliding windows before creating excess sessions', () => {
+    const limitedService = new AuthService(new UserSessionRepository(database.db), {
+      telegramBotToken: TEST_TELEGRAM_BOT_TOKEN,
+      adminTelegramChatId: '900719925474099',
+      now: () => new Date(now),
+      createToken: () =>
+        `${String(database.db.select().from(sessions).all().length).padStart(43, 'a')}`,
+      sessionCreationRateLimiter: new SlidingWindowRateLimiter(5, 5 * 60_000)
+    });
+
+    for (let index = 0; index < 5; index += 1) {
+      limitedService.authenticateWithTelegram(createTelegramInitData());
+    }
+
+    expect(() => limitedService.authenticateWithTelegram(createTelegramInitData())).toThrow(
+      AuthRateLimitError
+    );
+    expect(database.db.select().from(sessions).all()).toHaveLength(5);
+
+    const attemptLimiter = new SlidingWindowRateLimiter(2, 60_000);
+    expect(attemptLimiter.consume('127.0.0.1', now)).toEqual({ allowed: true });
+    expect(attemptLimiter.consume('127.0.0.1', now)).toEqual({ allowed: true });
+    expect(attemptLimiter.consume('127.0.0.1', now)).toEqual({
+      allowed: false,
+      retryAfterSeconds: 60
+    });
   });
 });
 

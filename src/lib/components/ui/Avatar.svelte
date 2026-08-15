@@ -9,11 +9,22 @@
   }
 
   let { name, photoUrl = null, size = 'md', class: className = '' }: Props = $props();
+  let failedPhotoUrl = $state<string | null>(null);
+
+  function handlePhotoError(): void {
+    if (photoUrl) failedPhotoUrl = photoUrl;
+  }
 </script>
 
 <span class={`ui-avatar ui-avatar--${size} ${className}`}>
-  {#if photoUrl}
-    <img src={photoUrl} alt="" loading="lazy" referrerpolicy="no-referrer" />
+  {#if photoUrl && photoUrl !== failedPhotoUrl}
+    <img
+      src={photoUrl}
+      alt=""
+      loading="eager"
+      referrerpolicy="no-referrer"
+      onerror={handlePhotoError}
+    />
   {:else}
     <Icon name="user" size={size === 'lg' ? 50 : size === 'md' ? 31 : 22} />
   {/if}

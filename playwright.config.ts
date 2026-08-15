@@ -33,6 +33,8 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       APP_BASE_URL: baseURL,
+      ADDRESS_HEADER: 'X-Forwarded-For',
+      XFF_DEPTH: '1',
       PUBLIC_TELEGRAM_BOT_USERNAME: 'example_vpn_bot',
       TELEGRAM_BOT_TOKEN: '123456789:abcdefghijklmnopqrstuvwxyzABCDE',
       TELEGRAM_WEBHOOK_SECRET: 'telegram-webhook-secret-at-least-32',

@@ -19,7 +19,7 @@
   const horizontalDominance = 1.25;
 
   let { activeSection, onChange, support, home, profile }: Props = $props();
-  let gestureStart = $state<GestureStart | null>(null);
+  let gestureStart: GestureStart | null = null;
 
   const activeIndex = $derived(sectionOrder.indexOf(activeSection));
 

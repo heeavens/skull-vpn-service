@@ -1,6 +1,6 @@
 # Техническое задание: VPN Telegram Mini App + Marzban
 
-**Версия:** 1.0
+**Версия:** 1.1
 **Статус:** Draft для согласования  
 **Дата:** 15 августа 2026  
 **Источник истины:** этот файл  
@@ -9,6 +9,7 @@
 ## Changelog
 
 - v1.0: зафиксированы продуктовые требования, архитектура, схема данных, контракты интеграций, безопасность, тестирование и план реализации.
+- v1.1: утверждены HTTP-контракты Telegram auth/logout, стабильные auth error codes, лимиты запросов, trusted proxy и ежечасная очистка сессий.
 
 ## 1. Цель проекта
 
@@ -222,6 +223,10 @@ Marzban предоставляет REST API и поддерживает VLESS, �
 
 Нельзя доверять Telegram.WebApp.initDataUnsafe. В БД и бизнес-логику попадают только данные из серверно проверенного initData. Официальный алгоритм: [Telegram Mini Apps, validating data](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app).
 
+POST /api/auth/telegram принимает исходный initData как UTF-8 text/plain размером не более 16 KiB. Успешный ответ: 204 No Content и session cookie без JSON body. Endpoint допускает 10 попыток с одного client address за скользящую минуту и не более 5 успешно созданных сессий для одного проверенного Telegram user за 5 минут. При rate limit возвращаются 429, AUTH_RATE_LIMITED и Retry-After.
+
+Client address берётся только через adapter-node при ADDRESS_HEADER=X-Forwarded-For и XFF_DEPTH=1. Публичный трафик приходит через внутренний Caddy, а app container не публикуется наружу.
+
 ### 8.2. Сессии
 
 - В cookie хранится только случайный непрозрачный токен.
@@ -229,7 +234,8 @@ Marzban предоставляет REST API и поддерживает VLESS, �
 - Cookie: Secure, HttpOnly, SameSite=Lax, Path=/.
 - Срок сессии: 7 дней с возможностью обновления после повторной проверки свежего initData.
 - Logout удаляет сессию на сервере и cookie.
-- Сессии с истёкшим сроком регулярно удаляются worker.
+- POST /api/auth/logout требует Origin, равный APP_BASE_URL origin, идемпотентно удаляет текущую сессию, очищает cookie и возвращает 204 No Content. Неверный Origin возвращает 403 REQUEST_ORIGIN_INVALID без изменения сессии.
+- Сессии с истёкшим сроком удаляются worker при старте и затем каждый час. При SIGTERM worker останавливает таймер и закрывает SQLite.
 - Серверный hook загружает пользователя в event.locals.
 - Доступ к защищённым операциям проверяется непосредственно в server load/action или endpoint, а не только в layout.
 
@@ -547,6 +553,18 @@ Stripe требует исходное тело запроса для прове
     }
 
 Пользовательское сообщение может локализоваться на клиенте по code. Внутренняя ошибка, stack trace и данные внешнего API пользователю не возвращаются.
+
+Стабильные коды Telegram auth:
+
+| HTTP | Code | Условие |
+| --- | --- | --- |
+| 401 | TELEGRAM_INIT_DATA_INVALID | Подпись, формат или UTF-8 initData неверны |
+| 401 | TELEGRAM_INIT_DATA_EXPIRED | auth_date старше 5 минут или находится в будущем |
+| 403 | REQUEST_ORIGIN_INVALID | Origin logout не совпадает с APP_BASE_URL origin |
+| 413 | REQUEST_BODY_TOO_LARGE | Body auth превышает 16 KiB |
+| 415 | REQUEST_CONTENT_TYPE_INVALID | Content-Type auth не text/plain |
+| 429 | AUTH_RATE_LIMITED | Превышен лимит по client address или Telegram user |
+| 500 | INTERNAL_ERROR | Безопасная нормализация непредвиденной серверной ошибки |
 
 ### 13.2. Основные endpoints
 
@@ -1017,6 +1035,8 @@ SvelteKit предотвращает импорт src/lib/server в клиент
 | Переменная | Назначение |
 | --- | --- |
 | APP_BASE_URL | Публичный HTTPS URL Mini App |
+| ADDRESS_HEADER | Всегда X-Forwarded-For для adapter-node за внутренним Caddy |
+| XFF_DEPTH | Всегда 1: доверяется ровно один proxy hop |
 | PUBLIC_TELEGRAM_BOT_USERNAME | Username бота, не секрет |
 | TELEGRAM_BOT_TOKEN | Bot API token |
 | TELEGRAM_WEBHOOK_SECRET | Проверка webhook |
@@ -1043,6 +1063,8 @@ Config module валидирует все обязательные переме�
 ## 19. Фоновые задачи
 
 Worker использует таблицу jobs как минимальную надёжную очередь для одного VPS.
+
+Независимое housekeeping worker удаляет истёкшие sessions при старте и каждый час. Это не durable job: операция локальная, повторяемая и не вызывает внешних эффектов. Логируется только число удалённых строк или безопасный SESSION_CLEANUP_FAILED.
 
 ### 19.1. Общие правила
 

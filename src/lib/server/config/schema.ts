@@ -12,6 +12,8 @@ const httpUrl = z.url().refine((value) => {
 
 const environmentShape = {
   APP_BASE_URL: httpUrl,
+  ADDRESS_HEADER: z.literal('X-Forwarded-For'),
+  XFF_DEPTH: z.literal('1').transform(() => 1 as const),
   PUBLIC_TELEGRAM_BOT_USERNAME: z
     .string()
     .trim()
@@ -47,6 +49,8 @@ const baseEnvironmentSchema = z.object(environmentShape);
 const webEnvironmentSchema = baseEnvironmentSchema
   .pick({
     APP_BASE_URL: true,
+    ADDRESS_HEADER: true,
+    XFF_DEPTH: true,
     PUBLIC_TELEGRAM_BOT_USERNAME: true,
     TELEGRAM_BOT_TOKEN: true,
     TELEGRAM_WEBHOOK_SECRET: true,
@@ -123,6 +127,8 @@ export type WebAppConfig = Readonly<
     paymentCurrency: 'eur';
     stripeLivemodeAllowed: false;
     sessionSecret: string;
+    addressHeader: 'X-Forwarded-For';
+    xffDepth: 1;
   }
 >;
 
@@ -278,7 +284,9 @@ function toWebConfig(
     stripeApiVersion: value.STRIPE_API_VERSION,
     paymentCurrency: value.PAYMENT_CURRENCY,
     stripeLivemodeAllowed: value.STRIPE_LIVEMODE_ALLOWED,
-    sessionSecret: value.SESSION_SECRET
+    sessionSecret: value.SESSION_SECRET,
+    addressHeader: value.ADDRESS_HEADER,
+    xffDepth: value.XFF_DEPTH
   };
 }
 
