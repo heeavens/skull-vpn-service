@@ -1,0 +1,16 @@
+export type IconName =
+  | 'arrow-right'
+  | 'bolt'
+  | 'check'
+  | 'chevron-right'
+  | 'close'
+  | 'crown'
+  | 'globe'
+  | 'help'
+  | 'home'
+  | 'info'
+  | 'lock'
+  | 'shield'
+  | 'sparkles'
+  | 'user'
+  | 'warning';
