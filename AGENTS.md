@@ -288,3 +288,5 @@ Before marking a task complete:
 - the team lead reviewed protected contracts and security-sensitive changes.
 
 Use the repository's actual package scripts. Do not invent command names when package.json already defines them.
+
+Approach to code testing fixed by skill 'engineering:testing-strategy'. Review PR - 'engineering:code-review'. Contracts and slicing decisions teamlead making via 'engineering:archtecture' (ADR).
