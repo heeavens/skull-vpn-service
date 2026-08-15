@@ -12,8 +12,8 @@
   --app-surface-soft: var(--tg-theme-secondary-bg-color, var(--fallback-surface-soft));
   --app-text: var(--tg-theme-text-color, var(--fallback-text));
   --app-muted: var(--tg-theme-hint-color, var(--fallback-muted));
-  --app-link: var(--tg-theme-link-color, #303cda);
-  --app-button: var(--tg-theme-button-color, #303cda);
+  --app-link: var(--tg-theme-link-color, var(--app-blue));
+  --app-button: var(--tg-theme-button-color, var(--app-blue));
   --app-button-text: var(--tg-theme-button-text-color, #ffffff);
   --app-blue: #303cda;
   --app-blue-dark: #2530c7;
@@ -66,6 +66,7 @@ body {
   min-width: 320px;
   min-height: 100%;
   margin: 0;
+  overscroll-behavior: none;
   color: var(--app-text);
   background: linear-gradient(145deg, #eef0ff 0%, #e4e7ff 100%);
   font-family: var(--font-sans);
@@ -124,11 +125,14 @@ a:focus-visible {
 }
 
 .app-shell[data-theme='light'] {
-  --app-bg: #ffffff;
-  --app-surface: #ffffff;
-  --app-surface-soft: #f5f6f8;
-  --app-text: #0a0a10;
-  --app-muted: #71727b;
+  --app-bg: var(--tg-theme-bg-color, #ffffff);
+  --app-surface: var(--tg-theme-secondary-bg-color, #ffffff);
+  --app-surface-soft: var(--tg-theme-secondary-bg-color, #f5f6f8);
+  --app-text: var(--tg-theme-text-color, #0a0a10);
+  --app-muted: var(--tg-theme-hint-color, #71727b);
+  --app-link: var(--tg-theme-link-color, #303cda);
+  --app-button: var(--tg-theme-button-color, #303cda);
+  --app-button-text: var(--tg-theme-button-text-color, #ffffff);
   --app-line: #dedee4;
   --app-ink: #0a0a10;
   --app-blue: #303cda;
@@ -136,11 +140,14 @@ a:focus-visible {
 }
 
 .app-shell[data-theme='dark'] {
-  --app-bg: #111218;
-  --app-surface: #171820;
-  --app-surface-soft: #22232d;
-  --app-text: #f7f7fb;
-  --app-muted: #aaabb6;
+  --app-bg: var(--tg-theme-bg-color, #111218);
+  --app-surface: var(--tg-theme-secondary-bg-color, #171820);
+  --app-surface-soft: var(--tg-theme-secondary-bg-color, #22232d);
+  --app-text: var(--tg-theme-text-color, #f7f7fb);
+  --app-muted: var(--tg-theme-hint-color, #aaabb6);
+  --app-link: var(--tg-theme-link-color, #7d86ff);
+  --app-button: var(--tg-theme-button-color, #7d86ff);
+  --app-button-text: var(--tg-theme-button-text-color, #ffffff);
   --app-line: #3b3c48;
   --app-ink: #f7f7fb;
   --app-blue: #7d86ff;
@@ -195,6 +202,7 @@ a:focus-visible {
   padding: 7px;
   background: var(--app-surface);
   background: color-mix(in srgb, var(--app-surface) 82%, transparent);
+  border: 1.5px solid var(--app-ink);
   border: 1.5px solid color-mix(in srgb, var(--app-ink) 75%, transparent);
   border-radius: 29px 25px 30px 24px / 26px 31px 24px 29px;
   box-shadow:
@@ -272,6 +280,11 @@ a:focus-visible {
   font-weight: 800;
   letter-spacing: 0.01em;
   line-height: 1;
+}
+
+.page-header__copy h1:focus-visible {
+  outline: 3px solid #7c85ff;
+  outline-offset: 3px;
 }
 
 .page-header__copy p {
