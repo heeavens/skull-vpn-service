@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { createTelegramInitData } from '../helpers/telegram';
 
 interface TelegramTestBridge {
   calls: { ready: number; expand: number };
@@ -21,6 +22,8 @@ const adminSessionTokenHash = createHash('sha256').update(adminSessionToken, 'ut
 const expiredSessionTokenHash = createHash('sha256')
   .update(expiredSessionToken, 'utf8')
   .digest('hex');
+const e2eTelegramBotToken = '123456789:abcdefghijklmnopqrstuvwxyzABCDE';
+const authenticatedTelegramUserId = 777000111;
 
 test.beforeAll(() => {
   const databaseUrl = process.env.E2E_DATABASE_URL;
@@ -113,6 +116,103 @@ test('auth guard rejects an expired session and clears its cookie', async ({ req
   expect(setCookie).toContain('HttpOnly');
   expect(setCookie).toContain('Secure');
   expect(setCookie).toContain('SameSite=Lax');
+});
+
+test('Telegram bridge creates a hashed session and logout revokes it', async ({
+  context,
+  page
+}) => {
+  const rawInitData = createTelegramInitData({
+    botToken: e2eTelegramBotToken,
+    authDate: Math.floor(Date.now() / 1000),
+    user: {
+      id: authenticatedTelegramUserId,
+      username: 'bridge_user',
+      first_name: 'Bridge',
+      last_name: 'User',
+      language_code: 'ru'
+    }
+  });
+  await installTelegramBridge(page, 'light', rawInitData);
+
+  await page.goto('/open-in-telegram');
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId('section-home')).toHaveAttribute('aria-hidden', 'false');
+  const sessionCookie = (await context.cookies()).find((cookie) => cookie.name === 'vpn_session');
+  expect(sessionCookie).toMatchObject({ httpOnly: true, secure: true, sameSite: 'Lax' });
+  expect(sessionCookie?.value).toMatch(/^[A-Za-z\d_-]{43}$/);
+
+  const storedSession = readAuthenticatedSession();
+  expect(storedSession).toEqual({
+    tokenHash: createHash('sha256').update(sessionCookie!.value, 'utf8').digest('hex'),
+    telegramUserId: String(authenticatedTelegramUserId),
+    username: 'bridge_user'
+  });
+  expect(JSON.stringify(storedSession)).not.toContain(rawInitData);
+
+  const rejectedLogout = await context.request.post('/api/auth/logout', {
+    headers: { origin: 'https://attacker.example' }
+  });
+  expect(rejectedLogout.status()).toBe(403);
+  await expect(rejectedLogout.json()).resolves.toMatchObject({
+    error: { code: 'REQUEST_ORIGIN_INVALID' }
+  });
+  expect(readAuthenticatedSession()).toEqual(storedSession);
+
+  const logoutStatus = await page.evaluate(async () => {
+    const response = await fetch('/api/auth/logout', { method: 'POST' });
+    return response.status;
+  });
+  expect(logoutStatus).toBe(204);
+  expect((await context.cookies()).find((cookie) => cookie.name === 'vpn_session')).toBeUndefined();
+  expect(readAuthenticatedSession()).toBeUndefined();
+
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/open-in-telegram$/);
+});
+
+test('auth HTTP contract rejects unsafe requests without database writes', async ({ request }) => {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const forged = createTelegramInitData({
+    botToken: e2eTelegramBotToken,
+    authDate: nowSeconds,
+    user: { id: 777000112, username: 'signed_user', first_name: 'Signed' }
+  }).replace('signed_user', 'forged_user');
+  const expired = createTelegramInitData({
+    botToken: e2eTelegramBotToken,
+    authDate: nowSeconds - 301,
+    user: { id: 777000113, first_name: 'Expired' }
+  });
+
+  for (const [rawInitData, code] of [
+    [forged, 'TELEGRAM_INIT_DATA_INVALID'],
+    [expired, 'TELEGRAM_INIT_DATA_EXPIRED']
+  ] as const) {
+    const response = await request.post('/api/auth/telegram', {
+      data: rawInitData,
+      headers: { 'content-type': 'text/plain;charset=UTF-8' }
+    });
+    expect(response.status()).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ error: { code } });
+  }
+
+  const unsupported = await request.post('/api/auth/telegram', { data: '{}' });
+  expect(unsupported.status()).toBe(415);
+  await expect(unsupported.json()).resolves.toMatchObject({
+    error: { code: 'REQUEST_CONTENT_TYPE_INVALID' }
+  });
+
+  const oversized = await request.post('/api/auth/telegram', {
+    data: 'x'.repeat(16 * 1024 + 1),
+    headers: { 'content-type': 'text/plain' }
+  });
+  expect(oversized.status()).toBe(413);
+  await expect(oversized.json()).resolves.toMatchObject({
+    error: { code: 'REQUEST_BODY_TOO_LARGE' }
+  });
+
+  expect(countUsers(['777000112', '777000113'])).toBe(0);
 });
 
 test('returning session initializes Telegram lifecycle and follows its theme', async ({
@@ -290,39 +390,86 @@ async function addSessionCookie(context: BrowserContext, token: string): Promise
   ]);
 }
 
-async function installTelegramBridge(page: Page, initialTheme: 'light' | 'dark'): Promise<void> {
+async function installTelegramBridge(
+  page: Page,
+  initialTheme: 'light' | 'dark',
+  initData = ''
+): Promise<void> {
   await page.route('https://telegram.org/**', (route) => route.abort());
-  await page.addInitScript((theme) => {
-    const listeners = new Set<() => void>();
-    const calls = { ready: 0, expand: 0 };
-    const webApp = {
-      initData: '',
-      colorScheme: theme,
-      ready: () => {
-        calls.ready += 1;
-      },
-      expand: () => {
-        calls.expand += 1;
-      },
-      onEvent: (event: string, listener: () => void) => {
-        if (event === 'themeChanged') listeners.add(listener);
-      },
-      offEvent: (event: string, listener: () => void) => {
-        if (event === 'themeChanged') listeners.delete(listener);
-      }
-    };
-
-    Object.assign(window, {
-      Telegram: { WebApp: webApp },
-      __telegramTest: {
-        calls,
-        setTheme: (nextTheme: 'light' | 'dark') => {
-          webApp.colorScheme = nextTheme;
-          for (const listener of listeners) listener();
+  await page.addInitScript(
+    ({ initData, theme }) => {
+      const listeners = new Set<() => void>();
+      const calls = { ready: 0, expand: 0 };
+      const webApp = {
+        initData,
+        colorScheme: theme,
+        ready: () => {
+          calls.ready += 1;
+        },
+        expand: () => {
+          calls.expand += 1;
+        },
+        onEvent: (event: string, listener: () => void) => {
+          if (event === 'themeChanged') listeners.add(listener);
+        },
+        offEvent: (event: string, listener: () => void) => {
+          if (event === 'themeChanged') listeners.delete(listener);
         }
-      }
-    });
-  }, initialTheme);
+      };
+
+      Object.assign(window, {
+        Telegram: { WebApp: webApp },
+        __telegramTest: {
+          calls,
+          setTheme: (nextTheme: 'light' | 'dark') => {
+            webApp.colorScheme = nextTheme;
+            for (const listener of listeners) listener();
+          }
+        }
+      });
+    },
+    { initData, theme: initialTheme }
+  );
+}
+
+function readAuthenticatedSession():
+  { tokenHash: string; telegramUserId: string; username: string | null } | undefined {
+  const databaseUrl = process.env.E2E_DATABASE_URL;
+  if (!databaseUrl) throw new Error('E2E_DATABASE_URL is missing');
+  const database = new Database(databaseUrl, { readonly: true });
+
+  try {
+    return database
+      .prepare(
+        `select
+          sessions.token_hash as tokenHash,
+          users.telegram_user_id as telegramUserId,
+          users.username as username
+        from sessions
+        inner join users on users.id = sessions.user_id
+        where users.telegram_user_id = ?`
+      )
+      .get(String(authenticatedTelegramUserId)) as
+      { tokenHash: string; telegramUserId: string; username: string | null } | undefined;
+  } finally {
+    database.close();
+  }
+}
+
+function countUsers(telegramUserIds: readonly string[]): number {
+  const databaseUrl = process.env.E2E_DATABASE_URL;
+  if (!databaseUrl) throw new Error('E2E_DATABASE_URL is missing');
+  const database = new Database(databaseUrl, { readonly: true });
+
+  try {
+    const placeholders = telegramUserIds.map(() => '?').join(', ');
+    const result = database
+      .prepare(`select count(*) as count from users where telegram_user_id in (${placeholders})`)
+      .get(...telegramUserIds) as { count: number };
+    return result.count;
+  } finally {
+    database.close();
+  }
 }
 
 async function getTelegramLifecycleCalls(page: Page): Promise<{ ready: number; expand: number }> {

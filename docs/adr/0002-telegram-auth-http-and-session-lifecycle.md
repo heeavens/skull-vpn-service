@@ -1,6 +1,6 @@
 # ADR-0002: Telegram auth HTTP and session lifecycle
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-15
 - **Deciders:** Team lead
 
@@ -18,7 +18,7 @@ flow and regular session cleanup remain blocked until this proposal is accepted 
 
 ## Decision
 
-Propose the following contract for team lead approval:
+Use the following contract:
 
 - `POST /api/auth/telegram` accepts the unmodified `Telegram.WebApp.initData` as a UTF-8
   `text/plain` body with a 16 KiB maximum. It never accepts `initDataUnsafe` or a client user DTO.
@@ -41,7 +41,8 @@ Propose the following contract for team lead approval:
   configuration contract and `.env.example`.
 - `POST /api/auth/logout` requires same-origin `Origin`, is idempotent, always clears the cookie,
   deletes the matching server session when present, and returns `204 No Content`. It does not
-  reveal whether a supplied token existed.
+  reveal whether a supplied token existed. A mismatched or missing origin returns `403` with
+  `REQUEST_ORIGIN_INVALID` without changing the session.
 - `AuthenticatedUser` is a server principal containing the internal user ID, validated Telegram
   user ID, current Telegram profile fields, and `isAdmin`. Routes serialize a separate minimal
   profile view model and never return the principal wholesale.
@@ -111,8 +112,8 @@ durable business-job taxonomy.
 
 ## Action Items
 
-1. [ ] Team lead accepts or amends the proposed values.
-2. [ ] Update the `tech.md` version, changelog, endpoint table, error codes, limits, proxy settings,
+1. [x] Team lead accepts the proposed values.
+2. [x] Update the `tech.md` version, changelog, endpoint table, error codes, limits, proxy settings,
        and session-cleanup rules.
-3. [ ] Implement both auth routes, limits, cleanup, and acceptance-derived tests.
-4. [ ] Complete security review before merge.
+3. [x] Implement both auth routes, limits, cleanup, and acceptance-derived tests.
+4. [x] Complete security review before merge.
