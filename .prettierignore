@@ -1,0 +1,10 @@
+.svelte-kit
+build
+coverage
+drizzle/meta
+node_modules
+pnpm-lock.yaml
+playwright-report
+tech.md
+test-results
+vpn-mockup.html
